@@ -1,6 +1,8 @@
+import random
 from faker import Faker
 
 from datetime import datetime
+from confluent_kafka import SerializingProducer
 
 
 fake = Faker()
@@ -24,3 +26,26 @@ def generate_sales_transactions():
         'transactionDate': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f%z'),
         "paymentMethod": random.choice(['credit_card', 'debit_card', 'online_transfer'])
     }
+
+# 2 Specify main function Serializing Producer
+def main():
+    topic = 'financial_transactions'
+    producer = SerializingProducer({
+        "bootstrap.servers": 'localhost:9092'
+    })
+
+    curr_time = datetime.now()
+
+    while ((datetime.now - curr_time)).seconds < 120:
+        try:
+            transaction = generate_sales_transactions()
+            transaction['totalAmount'] = transaction['productPrice'] * transaction['productQuantity']
+
+            print(transaction)
+
+        except Exception as e:
+            print(e)
+
+
+if __name__ == "__main__":
+    main()

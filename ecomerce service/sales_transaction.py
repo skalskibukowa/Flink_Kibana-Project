@@ -27,6 +27,12 @@ def generate_sales_transactions():
         "paymentMethod": random.choice(['credit_card', 'debit_card', 'online_transfer'])
     }
 
+def delivery_report(err, msg):
+    if err is not None:
+        print(f'Message delivery failed: {err}')
+    else:
+        print(f"Message delivered to {msg.topic} [{msg.partition()}]")
+
 # 2 Specify main function Serializing Producer
 def main():
     topic = 'financial_transactions'
@@ -42,6 +48,23 @@ def main():
             transaction['totalAmount'] = transaction['productPrice'] * transaction['productQuantity']
 
             print(transaction)
+
+            producer.produce(
+                topic,
+                key=transaction['transactionId'],
+                value=json.dumps(transaction),
+                on_delivery=delivery_report
+            )
+
+            producer.poll(0)
+
+            #wait for 5 seconds before sending the next transaction
+            time.sleep(5)
+        except BufferError:
+            print("Buffer full! Waiting...")
+            time.sleep(1)
+        except Exception as e:
+            print(e)
 
         except Exception as e:
             print(e)

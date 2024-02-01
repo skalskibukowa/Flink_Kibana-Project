@@ -24,23 +24,34 @@ import Dto.SalesPerDay;
 import Dto.SalesPerMonth;
 import Dto.Transaction;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.connector.sink.Sink;
+import org.apache.flink.connector.elasticsearch.sink.Elasticsearch7SinkBuilder;
 import org.apache.flink.connector.jdbc.JdbcConnectionOptions;
 import org.apache.flink.connector.jdbc.JdbcExecutionOptions;
 import org.apache.flink.connector.jdbc.JdbcSink;
 import org.apache.flink.connector.jdbc.JdbcStatementBuilder;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
+import org.apache.flink.elasticsearch7.shaded.org.apache.http.HttpHost;
+import org.apache.flink.elasticsearch7.shaded.org.elasticsearch.action.index.IndexRequest;
+import org.apache.flink.elasticsearch7.shaded.org.elasticsearch.client.Requests;
+import org.apache.flink.elasticsearch7.shaded.org.elasticsearch.common.xcontent.XContentType;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
 import java.sql.Date;
 
+import static utils.JsonUtil.convertTransactionToJson;
 
-public class DataStreamJob {
 
-	private static final String jdbcUrl = "jdbc:postgresql://localhost:5432/postgres";
+public class Main {
+
+	private static final String jdbcUrl = "jdbc:postgresql://localhost:5438/postgres";
 	private static final String username = "postgres";
 	private static final String password = "postgres";
+	private static final String setBootstrapServers = "kafka:9092";
+	private static final String setGroupId = "flink-group";
+	private static final String sourceName = "Kafka source";
 
 	public static void main(String[] args) throws Exception {
 		// Sets up the execution environment, which is the main entry point
@@ -50,17 +61,19 @@ public class DataStreamJob {
 		String topic = "financial_transactions";
 
 		KafkaSource<Transaction> source = KafkaSource.<Transaction>builder()
-		.setBootstrapServers("localhost:9092")
+		.setBootstrapServers(setBootstrapServers)
 		.setTopics(topic)
-		.setGroupId("flink-group")
+		.setGroupId(setGroupId)
 		.setStartingOffsets(OffsetsInitializer.earliest())
 		.setValueOnlyDeserializer(new JSONValueDeserializationSchema())
 		.build();
 
-		DataStream<Transaction> transactionStream = env.fromSource(source, WatermarkStrategy.noWatermarks(), "Kafka source");
+		DataStream<Transaction> transactionStream = env.fromSource(source, WatermarkStrategy.noWatermarks(), sourceName);
 
 
 		transactionStream.print();
+
+		System.out.println("ExecOptions");
 
 		JdbcExecutionOptions execOptions = new JdbcExecutionOptions.Builder()
 				.withBatchSize(1000)
@@ -68,12 +81,16 @@ public class DataStreamJob {
 				.withMaxRetries(5)
 				.build();
 
+		System.out.println("connOptions");
+
 		JdbcConnectionOptions connOptions = new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
 				.withUrl(jdbcUrl)
 				.withDriverName("org.postgresql.Driver")
 				.withUsername(username)
 				.withPassword(password)
 				.build();
+
+		System.out.println("TransactionStream");
 
 		//create transaction table
         transactionStream.addSink(JdbcSink.sink(
@@ -98,6 +115,8 @@ public class DataStreamJob {
 			connOptions
 		)).name("Create Transaction Table Sink");
 
+		System.out.println("TransactionStream 2");
+
 		//create sales_per_category table sink
 		transactionStream.addSink(JdbcSink.sink(
 				"CREATE TABLE IF NOT EXISTS sales_per_category (" +
@@ -113,6 +132,7 @@ public class DataStreamJob {
 				connOptions
 		)).name("Create Sales Per Category Table");
 
+		System.out.println("TransactionStream 3");
 		//create sales_per_day table sink
 		transactionStream.addSink(JdbcSink.sink(
 				"CREATE TABLE IF NOT EXISTS sales_per_day (" +
@@ -140,6 +160,8 @@ public class DataStreamJob {
 				execOptions,
 				connOptions
 		)).name("Create Sales Per Month Table");
+
+		System.out.println("TransactionStream 4");
 
 		transactionStream.addSink(JdbcSink.sink(
 				"INSERT INTO transactions(transaction_id, product_id, product_name, product_category, product_price, " +
@@ -255,6 +277,25 @@ public class DataStreamJob {
 						connOptions
 				)).name("Insert into sales per month table");
 
+/*
+		transactionStream.sinkTo(
+				new Elasticsearch7SinkBuilder<Transaction>()
+						.setHosts(new HttpHost("localhost", 9200, "http"))
+						.setEmitter((transaction, runtimeContext, requestIndexer) -> {
+
+							String json = convertTransactionToJson(transaction);
+
+							IndexRequest indexRequest = Requests.indexRequest()
+									.index("transactions")
+									.id(transaction.getTransactionId())
+									.source(json, XContentType.JSON);
+							requestIndexer.add(indexRequest);
+						})
+						.build()
+		).name("Elasticsearch Sink");
+
+
+ */
 
 		// Execute program, beginning computation.
 		env.execute("Flink Java API Skeleton");

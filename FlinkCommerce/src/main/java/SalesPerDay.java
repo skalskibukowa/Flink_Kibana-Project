@@ -1,5 +1,3 @@
-package Dto;
-
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -9,8 +7,7 @@ import java.sql.Date;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class SalesPerCategory {
+public class SalesPerDay {
     private Date transactionDate;
-    private String category;
-    private Double totalSales;
+    private double totalSales ;
 }
